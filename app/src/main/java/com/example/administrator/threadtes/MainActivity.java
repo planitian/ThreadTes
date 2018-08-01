@@ -70,11 +70,11 @@ public class MainActivity extends AppCompatActivity {
 
         connecte.setOnClickListener((View v) -> {
 //            SocketConnect connect = new SocketConnect(socketWeakReference, Integer.parseInt(port.getText().toString().trim()));
-            SocketConnect connect=new SocketConnect(9999);
+            SocketConnect connect=new SocketConnect("192.168.43.10",9999);
             Future<Map<String,Object>> future = executorService.submit(connect);
             try {
                 Map<String,Object> result=future.get();
-                if (!result.get("isSuccess").equals(false)&&result.get("isSuccess").toString()!="false"){
+                if (!result.get("isSuccess").equals(false)&& !result.get("isSuccess").toString().equals("false")){
                     socket= (Socket) result.get("isSuccess");
                 }else {connecte.setClickable(false);
                 }
@@ -193,50 +193,4 @@ public class MainActivity extends AppCompatActivity {
 }
 
 
-class SocketConnect implements Callable<Map<String,Object>> {
-    private Socket socket;
-    private int port;
 
-    public SocketConnect(int port) {
-        this.port = port;
-    }
-
-    @Override
-    public Map<String, Object> call() throws Exception {
-        Map<String,Object> resultCall=new HashMap<>();
-        Process process = Runtime.getRuntime().exec("ping -w 2 192.168.43.10");//判断是否连接的IP;
-        int status = process.waitFor();
-        System.out.println("status"+status);
-//        BufferedReader bufferedReader = new BufferedReader(new InputStreamReader(process.getInputStream()));
-//        if (status==0){
-//            BufferedReader bufferedReader = new BufferedReader(new InputStreamReader(process.getInputStream()));
-//
-//            result= bufferedReader.readLine();
-//        }else {
-//            resultCall.put("isSuccess",false);
-//            return resultCall;
-//        }
-
-//            while ((result=bufferedReader.readLine())!=null){
-//                System.out.println("ping"+result);
-//            }
-//        System.out.println("ping :" + result + ">>>" + re);
-        if (status==0) {
-            try {
-                socket = new Socket();
-                socket.setKeepAlive(true);
-                socket.setSoTimeout(1000);
-                SocketAddress socketAddress = new InetSocketAddress("192.168.43.10", port);
-                socket.connect(socketAddress, 1000);
-                System.out.println("是否连接成功" + socket.isConnected());
-            } catch (IOException e) {
-                e.printStackTrace();
-            }
-        } else {
-            resultCall.put("isSuccess",false);
-            return resultCall;
-        }
-        resultCall.put("isSuccess",socket);
-        return resultCall;
-    }
-}
