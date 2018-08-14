@@ -30,12 +30,12 @@ public class MainService extends Service {
     private Timer timer;
     private String TAG=this.getClass().getSimpleName();
     private Socket socket;
-
+    private HeartBeat heartBeat;
     public MainService() {
         this.executorService = Executors.newFixedThreadPool(10);
         this.playerBinder = new PlayerBinder();
         this.timer = new Timer();
-        System.out.println(TAG+"我实例了");
+        System.out.println(TAG+"MainService   我实例了");
     }
 
     @Override
@@ -55,12 +55,27 @@ public class MainService extends Service {
 
     public class PlayerBinder extends Binder {
         boolean start() {
+            if(executorService==null||!executorService.isShutdown()){
+                //重新建立一个线程池 以便用于提交数据
+                executorService=Executors.newFixedThreadPool(10);
+            }
             return startThread();
         }
         void exitThread() {
             try {
-                socket.close();
-                executorService.shutdown();
+                //关闭socket 防止pos端口占用
+                if (socket!=null){
+                    socket.close();
+                }
+
+                //退出心跳线程 因为持有socke的引用 线程池也无法关闭，只能自己本身退出
+                heartBeat.isExit=true;
+                //关闭线程池
+                executorService.shutdownNow();
+
+                //因为线程池关闭后 无法再提交Task  所以 回收
+                executorService=null;
+
             } catch (IOException e) {
                 e.printStackTrace();
             }
@@ -79,13 +94,18 @@ public class MainService extends Service {
 
     }
 
+    //开启线程，提交到线程池 返回结果  连接结果
     Boolean startThread() {
         Future<Map<String, Object>> future = executorService.submit(new SocketConnect("10.132.255.170", 2000));
         try {
+            //线程结束运行时，返回的结果
             Map<String, Object> result = future.get();
             if (!result.get("isSuccess").equals(false) && !result.get("isSuccess").toString().equals("false")) {
                  socket=(Socket)result.get("isSuccess");
-                executorService.execute( new HeartBeat(socket));
+                 //心跳线程持有socket引用 所以需要本身自己关闭自己
+                 heartBeat=new HeartBeat(socket);
+                 //提交到线程池
+                executorService.execute(heartBeat);
                 executorService.execute(new ReadTread(socket));
                 return true;
             } else {
@@ -107,15 +127,16 @@ public class MainService extends Service {
         }
         @Override
         public void run() {
-            long first=0;
-            long second;
+            long first=0;//记录上一次成功发送心跳包的时间
+            long second;//记录现在的时间
             OutputStream outputStream = null;
             DataOutputStream dataOutputStream;
             while (!isExit) {
                 if (socket != null && !socket.isClosed()) {
-
+                     //记录当前时间 赋值
                     second=System.currentTimeMillis();
 //                    System.out.println("时间间隔"+(second-first));
+                    //当前时间和上一次时间之差大于5秒 则发送
                     if((second-first)>5000){
                         try {
                             if (outputStream==null){
@@ -124,17 +145,16 @@ public class MainService extends Service {
                             dataOutputStream = new DataOutputStream(outputStream);
                             dataOutputStream.writeUTF("xintiao");
                             dataOutputStream.flush();
-                            System.out.println("心跳包发送" + System.currentTimeMillis());
+                            System.out.println("HeartBeat   心跳包发送" + System.currentTimeMillis());
                             first=second;
-
                         } catch (IOException e) {
                             e.printStackTrace();
-                            System.out.println("心跳包异常");
+                            System.out.println("HeartBeat  心跳包异常");
                             anew(socket);
                         }
                     }
                 } else {
-                    System.out.println("socket关闭");
+                    System.out.println("HeartBeat  socket关闭");
                     anew(socket);
                 }
             }
@@ -143,16 +163,21 @@ public class MainService extends Service {
 
     //重新启动线程连接Socket
     public void anew(Socket socket){
-        if (socket!=null) {
-            try {
-                socket.close();
-                System.out.println(TAG+" "+ "重新启动线程连接Socket");
-                if (!startThread()) {
-                    anew(socket);
+//        System.out.println(executorService.isShutdown()+" "+executorService.isTerminated());
+        if (executorService!=null&&!executorService.isShutdown()) {
+            if (socket!=null) {
+
+                try {
+                    socket.close();
+                    socket=null;
+                } catch (IOException e) {
+                    e.printStackTrace();
+                    System.out.println(TAG+" anew "+"关闭Socket出错");
                 }
-            } catch (IOException e) {
-                e.printStackTrace();
-                System.out.println(TAG+"  "+"重新启动Socket线程出错");
+            }
+            System.out.println(TAG+"  anew "+ "重新启动线程连接Socket");
+            if (!startThread()) {
+                anew(socket);
             }
         }
     }
@@ -175,30 +200,32 @@ public class MainService extends Service {
                        int n=1;
                        int size=10;
                        inputStream=socket.getInputStream();
-                       byte[] temp=new byte[size];
-//                       ArrayList<byte> shhh=new ArrayList<byte>();
-                       BufferedInputStream bufferedInputStream=new BufferedInputStream(inputStream);
 
-                       ByteArrayOutputStream byteArrayOutputStream=new ByteArrayOutputStream();
-                       int len=0;
+                       if (inputStream.available()!=-1) {
+                           byte[] temp=new byte[size];
+//                       ArrayList<byte> shhh=new ArrayList<byte>();
+                           BufferedInputStream bufferedInputStream=new BufferedInputStream(inputStream);
+
+                           ByteArrayOutputStream byteArrayOutputStream=new ByteArrayOutputStream();
+                           int len=0;
 //                       while ((len=bufferedInputStream.read(temp))!=-1){
 //                           System.out.println("读取数据线程"+len);
 //                           byteArrayOutputStream.write(temp,0,len);
 //                           byteArrayOutputStream.flush();
 //                       }
-                       StringBuffer stringBuffer=new StringBuffer();
-                       while ((len=bufferedInputStream.read(temp))>=size){
-                           String tempString=new String(Arrays.copyOf(temp,
+                           StringBuilder stringBuffer=new StringBuilder();
+                           while ((len=bufferedInputStream.read(temp))>=size){
+                               String tempString=new String(Arrays.copyOf(temp,
+                                       len)).trim();
+                               stringBuffer.append(tempString);
+                               temp=null;
+                               temp=new byte[(n+1)*len];
+                               size=size*2;
+                           }
+                           String gainData=new String(Arrays.copyOf(temp,
                                    len)).trim();
-                           stringBuffer.append(tempString);
-                           temp=null;
-                           temp=new byte[(n+1)*len];
-                           size=size*2;
-                       }
-                       String gainData=new String(Arrays.copyOf(temp,
-                               len)).trim();
-                       stringBuffer.append(gainData);
-                       System.out.println(TAG+" "+"获得的数据"+stringBuffer.toString());
+                           stringBuffer.append(gainData);
+                           System.out.println(TAG+"  ReadTread "+"获得的数据"+stringBuffer.toString());
 
 //                       if ((len=bufferedInputStream.read(temp))>0){
 //                            String gainData=new String(Arrays.copyOf(temp,
@@ -219,10 +246,11 @@ public class MainService extends Service {
 //                       String gainData=dataInputStream.readUTF();
 //                       System.out.println(TAG+" 获得的数据 "+gainData );
 //                       eventbus 发送
+                       }
 
 
                    } catch (IOException e) {
-                       System.out.println(TAG+"数据读取线程出现异常");
+                       System.out.println(TAG+"    ReadTread   数据读取线程出现异常");
                        e.printStackTrace();
                        anew(socket);
                    }
@@ -242,7 +270,7 @@ public class MainService extends Service {
                 return true;
             } catch (IOException e) {
                 e.printStackTrace();
-                System.out.println(TAG+"sendData 出错");
+                System.out.println(TAG+" sendDataImp  sendData 出错");
                 return false;
             }
         }else {

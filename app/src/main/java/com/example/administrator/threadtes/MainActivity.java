@@ -67,7 +67,6 @@ public class MainActivity extends AppCompatActivity {
         inti();
         executorService = Executors.newCachedThreadPool();
 
-
         connecte.setOnClickListener((View v) -> {
 //            SocketConnect connect = new SocketConnect(socketWeakReference, Integer.parseInt(port.getText().toString().trim()));
             SocketConnect connect=new SocketConnect("192.168.43.10",9999);

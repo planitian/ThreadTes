@@ -91,6 +91,13 @@ public class Main2Activity extends AppCompatActivity {
         playerBinder.exitThread();
     }
 
+    @OnClick(R.id.zfh)
+    public void setZfh(){
+        boolean isSuccess=playerBinder.sendData("[2018-01-05 09:34:39] > [发送]{\"shopno\":\"98\",\"posno\":\"1\",\"operators\":\"4001\",\"password\":\"6015\",\"cashier\":\"1234\",\"cashierpwd\":\"1018\",\"INTERFACETYPE\":\"LOGINCERTIFY\",\"flag\":\"1\"}\n" +
+                "[2018-01-05 09:34:41] > [接收]{\"INTERFACETYPE\": \"LOGININFO\", \"retflag\": \"2\", \"retmsg\": \"\", \"cashier\": \"0\", \"cashiername\": \"\", \"operators\": \"0\", \"opername\": \"\"}");
+        Toast.makeText(Main2Activity.this,String.valueOf(isSuccess),Toast.LENGTH_SHORT).show();
+    }
+
     @Subscribe(threadMode = ThreadMode.MAIN)
     public void showData(String data){
          receive.setText(data);
